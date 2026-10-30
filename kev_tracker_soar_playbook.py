@@ -18,7 +18,10 @@ from urllib.request import Request, urlopen
 import phantom.rules as phantom
 
 
-FEED_URL = "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json"
+REPOSITORY_SNAPSHOT_URL = (
+    "https://raw.githubusercontent.com/garrettds11/cisa-kev-list/main/data/kev-current.json"
+)
+CISA_FEED_URL = "https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json"
 CUSTOM_LIST_NAME = "cisa_kev_catalog"
 CVE_PATTERN = re.compile(r"^CVE-[0-9]{4}-[0-9]{4,19}$")
 REQUIRED_CATALOG_FIELDS = ("catalogVersion", "dateReleased", "count", "vulnerabilities")
@@ -40,41 +43,53 @@ def _utc_now():
 
 
 def _fetch_feed():
-    request = Request(
-        FEED_URL,
-        headers={
-            "User-Agent": "cisa-kev-soar-playbook/1.0",
-            "Accept": "application/json",
-        },
-    )
     last_error = None
-    for attempt in range(3):
-        try:
-            with urlopen(request, timeout=30) as response:
-                if response.status != 200:
-                    raise RuntimeError("CISA returned HTTP {}".format(response.status))
-                payload = json.loads(response.read().decode("utf-8"))
-            if not isinstance(payload, dict):
-                raise RuntimeError("CISA feed root must be a JSON object")
-            return payload
-        except (HTTPError, URLError, TimeoutError, UnicodeDecodeError, ValueError, RuntimeError) as exc:
-            last_error = exc
-            if attempt < 2:
-                import time
-                time.sleep(2 ** attempt)
+    for source_url in (REPOSITORY_SNAPSHOT_URL, CISA_FEED_URL):
+        request = Request(
+            source_url,
+            headers={
+                "User-Agent": "cisa-kev-soar-playbook/1.0",
+                "Accept": "application/json",
+            },
+        )
+        for attempt in range(3):
+            try:
+                with urlopen(request, timeout=30) as response:
+                    if response.status != 200:
+                        raise RuntimeError("Source returned HTTP {}".format(response.status))
+                    payload = json.loads(response.read().decode("utf-8"))
+                if not isinstance(payload, dict):
+                    raise RuntimeError("Feed root must be a JSON object")
+                return payload
+            except (HTTPError, URLError, TimeoutError, UnicodeDecodeError, ValueError, RuntimeError) as exc:
+                last_error = exc
+                if attempt < 2:
+                    import time
+                    time.sleep(2 ** attempt)
     raise RuntimeError("Unable to fetch a valid CISA KEV feed: {}".format(last_error))
 
 
 def _validate_feed(payload):
-    missing = [field for field in REQUIRED_CATALOG_FIELDS if field not in payload]
-    if missing:
-        raise RuntimeError("Feed is missing catalog field(s): {}".format(", ".join(missing)))
-    version = payload["catalogVersion"]
-    released = payload["dateReleased"]
-    entries = payload["vulnerabilities"]
-    count = payload["count"]
+    if payload.get("schemaVersion") == "1.0":
+        source = payload.get("source")
+        if not isinstance(source, dict):
+            raise RuntimeError("Published snapshot source metadata must be an object")
+        version = source.get("catalogVersion")
+        released = source.get("dateReleased")
+        count = payload.get("recordCount")
+        entries = payload.get("records")
+    else:
+        version = payload.get("catalogVersion")
+        released = payload.get("dateReleased")
+        count = payload.get("count")
+        entries = payload.get("vulnerabilities")
     if not isinstance(version, str) or not version.strip():
         raise RuntimeError("catalogVersion must be a non-empty string")
+    if not isinstance(released, str):
+        raise RuntimeError("dateReleased must be a string")
+    missing = [field for field in REQUIRED_CATALOG_FIELDS if field not in payload]
+    if payload.get("schemaVersion") != "1.0" and missing:
+        raise RuntimeError("Feed is missing catalog field(s): {}".format(", ".join(missing)))
     if not isinstance(released, str):
         raise RuntimeError("dateReleased must be a string")
     try:
@@ -160,10 +175,10 @@ def _row_for_entry(entry, version, now, prior_row=None):
         entry["shortDescription"],
         entry["requiredAction"],
         entry.get("notes", ""),
-        prior[12] or now,
-        now,
+        entry.get("firstSeenUtc") or prior[12] or now,
+        entry.get("lastSeenUtc") or now,
         "true",
-        version,
+        entry.get("lastCatalogVersion") or version,
     ]
 
 
