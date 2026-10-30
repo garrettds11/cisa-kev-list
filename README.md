@@ -1,44 +1,34 @@
 # cisa-kev-list
 
-A small Python utility that downloads CISA's Known Exploited Vulnerabilities (KEV) JSON feed and maintains a cumulative record of CVEs and affected software.
+A small Python utility that downloads CISA's Known Exploited Vulnerabilities (KEV) feed, maintains a cumulative record, and publishes stable snapshots for automation consumers.
 
 ## Standalone Python tracker
 
-### Requirements
-
-- Python 3.10 or newer
-- Network access to the CISA KEV JSON feed
-- No third-party Python packages
-
-### Run
+The original standalone workflow remains available:
 
 ```bash
 python kev_tracker.py
 ```
 
-The command creates or updates:
-
-- `kev_history.sqlite3` — SQLite history database and source of truth
-- `kev_software_cves.csv` — cumulative spreadsheet-friendly export
-
-Both files are written to the current working directory. Use `--db` and `--csv` to choose other paths:
-
-```bash
-python kev_tracker.py --db data/kev_history.sqlite3 --csv data/kev_software_cves.csv
-```
-
-Run the script again whenever you want to refresh the list, or schedule it with Task Scheduler or cron. Existing CVEs remain in the cumulative output; `currentlyListed` indicates whether a CVE appeared in the latest successful feed refresh. The script also records first/last observation times and updates changed CISA fields.
+It creates or updates `kev_history.sqlite3` and `kev_software_cves.csv` in the current directory. Use `--db` and `--csv` to choose other paths. It requires Python 3.10 or newer and uses no third-party packages.
 
 ## Splunk SOAR playbook
 
-[`kev_tracker_soar_playbook.py`](kev_tracker_soar_playbook.py) is the SOAR-native version. It does not use SQLite; it uses Splunk SOAR's Custom Lists API to persist the cumulative catalog between runs.
+[`kev_tracker_soar_playbook.py`](kev_tracker_soar_playbook.py) uses a SOAR Custom List for persistence. It first tries this repository's published snapshot and falls back to CISA's feed. Create an empty Custom List named `cisa_kev_catalog` with 16 columns in the order declared by `ROW_FIELDS`, then add the source as a Python playbook. The SOAR runner needs outbound HTTPS access to GitHub or CISA.
 
-### Configure and run
+## Published snapshots for other automation tools
 
-1. In Splunk SOAR, create an empty Custom List named `cisa_kev_catalog` with 16 columns.
-2. Use the column order in `ROW_FIELDS` near the top of the playbook source: `cveID`, `vendorProject`, `product`, `vulnerabilityName`, `dateAdded`, `dueDate`, `knownRansomwareCampaignUse`, `forensicTriage`, `cwes`, `shortDescription`, `requiredAction`, `notes`, `firstSeenUtc`, `lastSeenUtc`, `currentlyListed`, `lastCatalogVersion`.
-3. Add the source as a Python playbook in SOAR and run it on a schedule or manually. The SOAR execution environment needs outbound HTTPS access to the CISA feed.
+A scheduled GitHub Actions workflow publishes versioned data files on weekdays and can also be run manually. The first successful run creates the `data/` files.
 
-The playbook validates the feed before modifying the list. It updates existing CVEs, appends newly observed CVEs, and retains historical rows with `currentlyListed=false` if an entry is absent from a later feed. Avoid overlapping executions because each run replaces the list contents as one cumulative snapshot.
+| Snapshot | URL |
+|---|---|
+| Current JSON | [kev-current.json](https://raw.githubusercontent.com/garrettds11/cisa-kev-list/main/data/kev-current.json) |
+| Cumulative JSON | [kev-cumulative.json](https://raw.githubusercontent.com/garrettds11/cisa-kev-list/main/data/kev-cumulative.json) |
+| Current CSV | [kev-current.csv](https://raw.githubusercontent.com/garrettds11/cisa-kev-list/main/data/kev-current.csv) |
+| Cumulative CSV | [kev-cumulative.csv](https://raw.githubusercontent.com/garrettds11/cisa-kev-list/main/data/kev-cumulative.csv) |
 
-The standalone SQLite database and CSV are local outputs. Neither version automatically commits its generated data back to GitHub.
+The JSON contract is versioned at [schemas/kev-snapshot.schema.json](schemas/kev-snapshot.schema.json). Integration examples and refresh behavior are in [docs/automation-integrations.md](docs/automation-integrations.md).
+
+The publisher keeps CISA fields and adds observation metadata: first seen, last seen, current listing status, and last catalog version. Git history retains prior published snapshots. Do not add private asset inventory or other organization-specific data to these public files.
+
+The standalone SQLite database and CSV remain local outputs. The GitHub workflow publishes only public CISA catalog data and its observation metadata.
