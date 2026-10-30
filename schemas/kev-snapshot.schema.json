@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/garrettds11/cisa-kev-list/blob/main/schemas/kev-snapshot.schema.json",
+  "title": "CISA KEV List published snapshot",
+  "description": "Versioned JSON contract published by cisa-kev-list for automation consumers.",
+  "type": "object",
+  "required": ["schemaVersion", "source", "recordCount", "records"],
+  "properties": {
+    "schemaVersion": {"const": "1.0"},
+    "source": {
+      "type": "object",
+      "required": ["name", "feedUrl", "catalogVersion", "dateReleased", "currentFeedCount"],
+      "properties": {
+        "name": {"type": "string"},
+        "feedUrl": {"type": "string", "format": "uri"},
+        "catalogVersion": {"type": "string"},
+        "dateReleased": {"type": "string", "format": "date-time"},
+        "currentFeedCount": {"type": "integer", "minimum": 0}
+      },
+      "additionalProperties": true
+    },
+    "recordCount": {"type": "integer", "minimum": 0},
+    "records": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/record"}
+    }
+  },
+  "$defs": {
+    "record": {
+      "type": "object",
+      "required": [
+        "cveID", "vendorProject", "product", "vulnerabilityName",
+        "dateAdded", "shortDescription", "requiredAction", "dueDate",
+        "firstSeenUtc", "lastSeenUtc", "currentlyListed", "lastCatalogVersion"
+      ],
+      "properties": {
+        "cveID": {"type": "string", "pattern": "^CVE-[0-9]{4}-[0-9]{4,19}$"},
+        "vendorProject": {"type": "string"},
+        "product": {"type": "string"},
+        "vulnerabilityName": {"type": "string"},
+        "dateAdded": {"type": "string", "format": "date"},
+        "shortDescription": {"type": "string"},
+        "requiredAction": {"type": "string"},
+        "dueDate": {"type": "string", "format": "date"},
+        "knownRansomwareCampaignUse": {"type": "string"},
+        "forensicTriage": {"type": "string"},
+        "notes": {"type": "string"},
+        "cwes": {"type": "array", "items": {"type": "string"}},
+        "firstSeenUtc": {"type": "string", "format": "date-time"},
+        "lastSeenUtc": {"type": "string", "format": "date-time"},
+        "currentlyListed": {"type": "boolean"},
+        "lastCatalogVersion": {"type": "string"}
+      },
+      "additionalProperties": true
+    }
+  }
+}
