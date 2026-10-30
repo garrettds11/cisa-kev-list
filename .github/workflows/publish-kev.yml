@@ -1,0 +1,37 @@
+name: Publish CISA KEV snapshots
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 23 * * 1-5"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: publish-cisa-kev-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Refresh snapshots
+        run: python scripts/publish_kev_snapshot.py
+      - name: Commit changed snapshots
+        run: |
+          git add data/kev-history.json data/kev-current.json data/kev-cumulative.json data/kev-current.csv data/kev-cumulative.csv
+          if git diff --cached --quiet; then
+            echo "No catalog changes to commit."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "Update published CISA KEV snapshots"
+          git push
